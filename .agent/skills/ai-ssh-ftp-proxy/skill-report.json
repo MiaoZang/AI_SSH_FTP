@@ -1,0 +1,178 @@
+{
+    "schema_version": "2.0",
+    "meta": {
+        "generated_at": "2026-01-18T13:55:00.000Z",
+        "slug": "ai-ssh-ftp-proxy",
+        "source_url": "https://github.com/your-repo/ai-ssh-ftp-proxy",
+        "source_ref": "main",
+        "model": "claude",
+        "analysis_version": "2.0.0",
+        "source_type": "custom",
+        "content_hash": "",
+        "tree_hash": ""
+    },
+    "skill": {
+        "name": "ai-ssh-ftp-proxy",
+        "description": "AI Agent Skill for executing SSH commands and FTP operations on remote servers via a proxy service.",
+        "summary": "Enables AI agents to access remote servers through SSH command execution, FTP file operations, and WebSocket interactive sessions. All data is Base64 encoded.",
+        "icon": "🖥️",
+        "version": "1.0.0",
+        "author": "AI_SSH_FTP Project",
+        "license": "MIT",
+        "category": "devops",
+        "tags": [
+            "ssh",
+            "ftp",
+            "remote-access",
+            "server-management",
+            "ai-agent",
+            "proxy",
+            "websocket"
+        ],
+        "supported_tools": [
+            "claude",
+            "codex",
+            "claude-code",
+            "langchain",
+            "autogpt"
+        ],
+        "risk_factors": []
+    },
+    "security_audit": {
+        "risk_level": "medium",
+        "is_blocked": false,
+        "safe_to_publish": true,
+        "summary": "This skill provides a proxy service that executes commands on remote servers. Credentials are stored server-side. All data is Base64 encoded to prevent injection. Deploy on trusted networks only.",
+        "risk_factor_evidence": [],
+        "critical_findings": [],
+        "high_findings": [],
+        "medium_findings": [
+            "Executes arbitrary commands on remote servers via SSH",
+            "Transfers files to/from remote servers via FTP"
+        ],
+        "low_findings": [],
+        "dangerous_patterns": [],
+        "files_scanned": 1,
+        "total_lines": 120,
+        "audit_model": "claude",
+        "audited_at": "2026-01-18T13:55:00.000Z"
+    },
+    "content": {
+        "user_title": "Remote Server Access for AI Agents",
+        "value_statement": "AI agents need to execute commands and transfer files on remote servers. This skill provides a secure proxy service with HTTP and WebSocket APIs.",
+        "seo_keywords": [
+            "AI SSH proxy",
+            "AI FTP proxy",
+            "remote command execution",
+            "AI agent server access",
+            "SSH API",
+            "FTP API",
+            "WebSocket SSH"
+        ],
+        "actual_capabilities": [
+            "Execute shell commands on remote servers via HTTP API",
+            "List, upload, and download files via FTP API",
+            "Interactive SSH sessions via WebSocket",
+            "Base64 encoding for safe data transmission"
+        ],
+        "limitations": [
+            "Requires pre-deployed proxy service on target server",
+            "Credentials must be configured server-side",
+            "Single target server per instance"
+        ],
+        "use_cases": [
+            {
+                "target_user": "AI Agent Developers",
+                "title": "Server Automation",
+                "description": "Enable AI agents to deploy code, run scripts, and manage server configurations."
+            },
+            {
+                "target_user": "DevOps",
+                "title": "Remote Operations",
+                "description": "Execute maintenance tasks on remote servers programmatically."
+            },
+            {
+                "target_user": "System Administrators",
+                "title": "File Management",
+                "description": "Upload/download configuration files and logs via FTP."
+            }
+        ],
+        "prompt_templates": [
+            {
+                "title": "Execute SSH Command",
+                "scenario": "Run a command on remote server",
+                "prompt": "Use the ssh_exec skill to run 'ls -la /' on the remote server. Remember to Base64 encode the command."
+            },
+            {
+                "title": "List FTP Directory",
+                "scenario": "View files on server",
+                "prompt": "Use the ftp_list skill to list files in the root directory. Encode the path '/' as Base64."
+            },
+            {
+                "title": "Upload File",
+                "scenario": "Transfer file to server",
+                "prompt": "Use ftp_upload to upload a test file. Encode both the path and content as Base64."
+            }
+        ],
+        "output_examples": [
+            {
+                "input": "Execute 'whoami' command",
+                "output": [
+                    "Request: POST /api/ssh/exec with {\"command\": \"d2hvYW1p\"}",
+                    "Response: {\"stdout\": \"cm9vdAo=\", \"exit_code\": 0}",
+                    "Decoded stdout: root"
+                ]
+            }
+        ],
+        "best_practices": [
+            "Always Base64 encode inputs and decode outputs",
+            "Use SSH key authentication instead of passwords when possible",
+            "Deploy proxy service on private network with firewall rules",
+            "Monitor server logs for unauthorized access attempts"
+        ],
+        "anti_patterns": [
+            "Exposing proxy service to public internet without authentication",
+            "Storing credentials in client-side code",
+            "Sending unencoded binary data"
+        ],
+        "faq": [
+            {
+                "question": "Why is Base64 encoding required?",
+                "answer": "Base64 ensures safe transmission of binary data and special characters, preventing injection attacks and parsing errors."
+            },
+            {
+                "question": "Can I use this with multiple servers?",
+                "answer": "Each proxy instance connects to one target server. Deploy multiple instances for multiple servers."
+            },
+            {
+                "question": "How do I use the WebSocket interactive session?",
+                "answer": "Connect to ws://server:48892/ws/ssh and send JSON messages with type 'input' and Base64-encoded payload."
+            }
+        ]
+    },
+    "file_structure": [
+        {
+            "name": "SKILL.md",
+            "type": "file",
+            "path": "SKILL.md"
+        },
+        {
+            "name": "skill-report.json",
+            "type": "file",
+            "path": "skill-report.json"
+        }
+    ],
+    "deployment": {
+        "binary": "ssh-ftp-proxy",
+        "config": "config/config.yaml",
+        "scripts": [
+            "scripts/start.sh",
+            "scripts/stop.sh",
+            "scripts/status.sh"
+        ],
+        "ports": {
+            "http": 48891,
+            "websocket": 48892
+        }
+    }
+}
