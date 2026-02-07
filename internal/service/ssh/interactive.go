@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -18,6 +19,10 @@ type WSMessage struct {
 }
 
 func (s *Service) StartInteractive(ws *websocket.Conn) error {
+	return s.StartInteractiveWithContext(context.Background(), ws)
+}
+
+func (s *Service) StartInteractiveWithContext(ctx context.Context, ws *websocket.Conn) error {
 	if err := s.connect(); err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
@@ -59,7 +64,11 @@ func (s *Service) StartInteractive(ws *websocket.Conn) error {
 		return fmt.Errorf("start shell failed: %w", err)
 	}
 
-	// Message loops
+	// Create cancellable context for goroutines
+	childCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Message loops with proper cleanup
 	var wg sync.WaitGroup
 	wg.Add(3)
 
@@ -68,14 +77,20 @@ func (s *Service) StartInteractive(ws *websocket.Conn) error {
 		defer wg.Done()
 		buf := make([]byte, 1024)
 		for {
-			n, err := stdout.Read(buf)
-			if n > 0 {
-				data := encoder.EncodeBytes(buf[:n])
-				msg := WSMessage{Type: "output", Payload: data}
-				ws.WriteJSON(msg)
-			}
-			if err != nil {
+			select {
+			case <-childCtx.Done():
 				return
+			default:
+				n, err := stdout.Read(buf)
+				if n > 0 {
+					data := encoder.EncodeBytes(buf[:n])
+					msg := WSMessage{Type: "output", Payload: data}
+					ws.WriteJSON(msg)
+				}
+				if err != nil {
+					cancel() // Signal other goroutines to stop
+					return
+				}
 			}
 		}
 	}()
@@ -85,14 +100,20 @@ func (s *Service) StartInteractive(ws *websocket.Conn) error {
 		defer wg.Done()
 		buf := make([]byte, 1024)
 		for {
-			n, err := stderr.Read(buf)
-			if n > 0 {
-				data := encoder.EncodeBytes(buf[:n])
-				msg := WSMessage{Type: "output", Payload: data} // Treat stderr as output for simplicity or separate type
-				ws.WriteJSON(msg)
-			}
-			if err != nil {
+			select {
+			case <-childCtx.Done():
 				return
+			default:
+				n, err := stderr.Read(buf)
+				if n > 0 {
+					data := encoder.EncodeBytes(buf[:n])
+					msg := WSMessage{Type: "output", Payload: data}
+					ws.WriteJSON(msg)
+				}
+				if err != nil {
+					cancel() // Signal other goroutines to stop
+					return
+				}
 			}
 		}
 	}()
@@ -101,26 +122,61 @@ func (s *Service) StartInteractive(ws *websocket.Conn) error {
 	go func() {
 		defer wg.Done()
 		for {
-			var msg WSMessage
-			if err := ws.ReadJSON(&msg); err != nil {
+			select {
+			case <-childCtx.Done():
 				return
-			}
-
-			if msg.Type == "input" {
-				data, err := encoder.DecodeBytes(msg.Payload)
-				if err != nil {
-					logger.Log.Warn("Invalid base64 input", "error", err)
-					continue
+			default:
+				var msg WSMessage
+				if err := ws.ReadJSON(&msg); err != nil {
+					cancel() // Signal other goroutines to stop
+					return
 				}
-				stdin.Write(data)
-			} else if msg.Type == "resize" {
-				// Handle resize payload: "rows,cols"
-				// Not implemented in MVP
+
+				if msg.Type == "input" {
+					data, err := encoder.DecodeBytes(msg.Payload)
+					if err != nil {
+						logger.Log.Warn("Invalid base64 input", "error", err)
+						continue
+					}
+					stdin.Write(data)
+				} else if msg.Type == "resize" {
+					// Handle resize payload: "rows,cols"
+					// Not implemented in MVP
+				}
 			}
 		}
 	}()
 
 	// Wait for session to end
-	session.Wait()
+	sessionDone := make(chan error, 1)
+	go func() {
+		sessionDone <- session.Wait()
+	}()
+
+	select {
+	case <-ctx.Done():
+		cancel()
+		session.Close()
+	case err := <-sessionDone:
+		cancel()
+		if err != nil {
+			logger.Log.Debug("Session ended", "error", err)
+		}
+	}
+
+	// Wait for goroutines to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// All goroutines finished
+	case <-ctx.Done():
+		// Context cancelled, force exit
+	}
+
 	return nil
 }

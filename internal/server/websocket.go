@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"ssh-ftp-proxy/internal/config"
+	"ssh-ftp-proxy/internal/encoder"
 	"ssh-ftp-proxy/internal/logger"
 	"ssh-ftp-proxy/internal/service/ssh"
 
@@ -57,6 +58,6 @@ func (s *WSServer) handleSSHInteractive(c *gin.Context) {
 
 	if err := s.sshService.StartInteractive(conn); err != nil {
 		logger.Log.Error("SSH Interactive session failed", "error", err)
-		conn.WriteJSON(gin.H{"type": "error", "payload": err.Error()})
+		conn.WriteJSON(gin.H{"type": "error", "payload": encoder.Encode(err.Error())})
 	}
 }

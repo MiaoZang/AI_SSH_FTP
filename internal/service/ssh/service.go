@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"ssh-ftp-proxy/internal/config"
@@ -14,6 +15,7 @@ import (
 )
 
 type Service struct {
+	mu     sync.Mutex
 	client *ssh.Client
 	config config.SSHConfig
 }
@@ -25,6 +27,9 @@ func NewService(cfg config.SSHConfig) *Service {
 }
 
 func (s *Service) connect() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.client != nil {
 		// Verify connection
 		_, _, err := s.client.Conn.SendRequest("keepalive@openssh.com", true, nil)
