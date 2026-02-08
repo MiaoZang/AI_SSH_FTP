@@ -1,9 +1,9 @@
 {
     "schema_version": "2.0",
     "meta": {
-        "generated_at": "2026-01-18T13:55:00.000Z",
+        "generated_at": "2026-02-08T08:00:00.000Z",
         "slug": "ai-ssh-ftp-proxy",
-        "source_url": "https://github.com/your-repo/ai-ssh-ftp-proxy",
+        "source_url": "https://github.com/MiaoZang/AI_SSH_FTP",
         "source_ref": "main",
         "model": "claude",
         "analysis_version": "2.0.0",
@@ -16,8 +16,8 @@
         "description": "AI Agent Skill for executing SSH commands and FTP operations on remote servers via a proxy service.",
         "summary": "Enables AI agents to access remote servers through SSH command execution, FTP file operations, and WebSocket interactive sessions. All data is Base64 encoded.",
         "icon": "🖥️",
-        "version": "1.0.0",
-        "author": "AI_SSH_FTP Project",
+        "version": "1.1.0",
+        "author": "MiaoZang",
         "license": "MIT",
         "category": "devops",
         "tags": [
@@ -34,7 +34,8 @@
             "codex",
             "claude-code",
             "langchain",
-            "autogpt"
+            "autogpt",
+            "gemini"
         ],
         "risk_factors": []
     },
@@ -53,9 +54,9 @@
         "low_findings": [],
         "dangerous_patterns": [],
         "files_scanned": 1,
-        "total_lines": 120,
+        "total_lines": 130,
         "audit_model": "claude",
-        "audited_at": "2026-01-18T13:55:00.000Z"
+        "audited_at": "2026-02-08T08:00:00.000Z"
     },
     "content": {
         "user_title": "Remote Server Access for AI Agents",
@@ -73,7 +74,9 @@
             "Execute shell commands on remote servers via HTTP API",
             "List, upload, and download files via FTP API",
             "Interactive SSH sessions via WebSocket",
-            "Base64 encoding for safe data transmission"
+            "Base64 encoding for safe data transmission",
+            "Graceful shutdown with signal handling",
+            "Thread-safe SSH connection management"
         ],
         "limitations": [
             "Requires pre-deployed proxy service on target server",
@@ -128,7 +131,8 @@
             "Always Base64 encode inputs and decode outputs",
             "Use SSH key authentication instead of passwords when possible",
             "Deploy proxy service on private network with firewall rules",
-            "Monitor server logs for unauthorized access attempts"
+            "Monitor server logs for unauthorized access attempts",
+            "Use the management script for service lifecycle control"
         ],
         "anti_patterns": [
             "Exposing proxy service to public internet without authentication",
@@ -147,6 +151,10 @@
             {
                 "question": "How do I use the WebSocket interactive session?",
                 "answer": "Connect to ws://server:48892/ws/ssh and send JSON messages with type 'input' and Base64-encoded payload."
+            },
+            {
+                "question": "What Linux distributions are supported?",
+                "answer": "Ubuntu/Debian (apt), CentOS/RHEL/Fedora (yum/dnf), Arch (pacman), Alpine (apk), and openSUSE (zypper)."
             }
         ]
     },
@@ -166,13 +174,32 @@
         "binary": "ssh-ftp-proxy",
         "config": "config/config.yaml",
         "scripts": [
-            "scripts/start.sh",
-            "scripts/stop.sh",
-            "scripts/status.sh"
+            "scripts/manage.sh"
         ],
         "ports": {
             "http": 48891,
             "websocket": 48892
+        },
+        "github_releases": "https://github.com/MiaoZang/AI_SSH_FTP/releases"
+    },
+    "changelog": [
+        {
+            "version": "1.1.0",
+            "date": "2026-02-08",
+            "changes": [
+                "Fixed SSH connection race condition with mutex",
+                "Fixed WebSocket goroutine leak with context cancellation",
+                "Added graceful shutdown with signal handling",
+                "Fixed WS error message Base64 encoding",
+                "Updated management script with bilingual support"
+            ]
+        },
+        {
+            "version": "1.0.0",
+            "date": "2026-01-18",
+            "changes": [
+                "Initial release with SSH/FTP/WebSocket support"
+            ]
         }
-    }
+    ]
 }

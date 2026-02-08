@@ -1,6 +1,7 @@
 ---
 name: ai-ssh-ftp-proxy
 description: "AI Agent Skill for executing SSH commands and FTP operations on remote servers via a proxy service. Supports HTTP API and WebSocket for interactive sessions."
+version: "1.1.0"
 ---
 
 # AI SSH/FTP Proxy Skill
@@ -16,17 +17,32 @@ This skill provides a proxy service that AI agents can call to:
 
 All inputs and outputs are Base64 encoded for safe transmission.
 
-## Deployment
+## Quick Start
 
-1. Upload the binary and config to your server
-2. Configure SSH/FTP credentials in `config/config.yaml`
-3. Start with `./scripts/start.sh`
+### One-Line Installation
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/manage.sh | bash
+```
+
+Or download and run the management script:
+```bash
+wget https://github.com/MiaoZang/AI_SSH_FTP/releases/latest/download/manage.sh
+chmod +x manage.sh
+./manage.sh
+```
+
+### Management Script Features
+
+- 🌐 **Bilingual** - English and Chinese support
+- 📦 **Auto-download** - Downloads binary from GitHub if missing
+- 🔧 **Interactive config** - Creates config.yaml via wizard
+- 🖥️ **Multi-distro** - Ubuntu/Debian/CentOS/Fedora/Arch/Alpine
 
 ## API Endpoints
 
 ### SSH Command Execution
 
-Execute a command on the remote server:
 ```bash
 curl -X POST http://YOUR_SERVER:48891/api/ssh/exec \
   -H "Content-Type: application/json" \
@@ -47,27 +63,24 @@ Response:
 **List Directory:**
 ```bash
 curl -X POST http://YOUR_SERVER:48891/api/ftp/list \
-  -H "Content-Type: application/json" \
   -d '{"path": "BASE64_ENCODED_PATH"}'
 ```
 
 **Upload File:**
 ```bash
 curl -X POST http://YOUR_SERVER:48891/api/ftp/upload \
-  -H "Content-Type: application/json" \
   -d '{"path": "BASE64_ENCODED_PATH", "content": "BASE64_ENCODED_CONTENT"}'
 ```
 
 **Download File:**
 ```bash
 curl -X POST http://YOUR_SERVER:48891/api/ftp/download \
-  -H "Content-Type: application/json" \
   -d '{"path": "BASE64_ENCODED_PATH"}'
 ```
 
 ### WebSocket Interactive SSH
 
-Connect to `ws://YOUR_SERVER:48892/ws/ssh` for an interactive shell session.
+Connect to `ws://YOUR_SERVER:48892/ws/ssh`
 
 **Client → Server:**
 ```json
@@ -101,18 +114,33 @@ ftp_server:
   password: "password"
 ```
 
-## Base64 Encoding Examples
+## Base64 Examples
 
-Encode a command:
 ```bash
+# Encode
 echo -n "ls -la /" | base64
 # Output: bHMgLWxhIC8=
+
+# Decode
+echo "cm9vdAo=" | base64 -d
+# Output: root
 ```
 
-Decode a response:
-```bash
-echo "dG90YWwgOTYK..." | base64 -d
-```
+## Version History
+
+### v1.1.0 (2026-02-08)
+- ✅ Fixed SSH connection race condition
+- ✅ Fixed WebSocket goroutine leak
+- ✅ Added graceful shutdown (SIGINT/SIGTERM)
+- ✅ Fixed WS error message Base64 encoding
+- ✅ Updated management script with bilingual support
+
+### v1.0.0 (2026-01-18)
+- Initial release
+
+## Repository
+
+**GitHub**: https://github.com/MiaoZang/AI_SSH_FTP
 
 ## Security Notes
 
