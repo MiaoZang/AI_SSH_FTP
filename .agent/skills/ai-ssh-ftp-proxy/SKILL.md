@@ -126,6 +126,70 @@ echo "cm9vdAo=" | base64 -d
 # Output: root
 ```
 
+## Practical Examples
+
+### Example 1: Restart PM2 Applications
+
+```bash
+# 1. Encode command
+echo -n "pm2 restart all" | base64
+# Output: cG0yIHJlc3RhcnQgYWxs
+
+# 2. Execute
+curl -X POST http://YOUR_SERVER:48891/api/ssh/exec \
+  -H "Content-Type: application/json" \
+  -d '{"command": "cG0yIHJlc3RhcnQgYWxs"}'
+
+# 3. Response
+{
+  "stdout": "W1BNMl0gQXBwbHlpbmcgYWN0aW9uLi4u",
+  "stderr": "",
+  "exit_code": 0
+}
+# exit_code=0 means success
+```
+
+### Example 2: Upload a Folder
+
+> ⚠️ FTP API only supports single file upload. For folders, use one of these methods:
+
+**Method A: Loop Upload (AI handles)**
+```
+1. AI lists local folder files
+2. Create remote directories via SSH: mkdir -p /path/to/folder
+3. Upload each file via /api/ftp/upload
+```
+
+**Method B: Archive + Extract (Recommended for large folders)**
+```bash
+# Local: create archive
+tar -czf folder.tar.gz folder/
+base64 folder.tar.gz > folder.tar.gz.b64
+
+# Upload via FTP API (content = base64 of tar.gz)
+curl -X POST http://YOUR_SERVER:48891/api/ftp/upload \
+  -d '{"path": "BASE64(/tmp/folder.tar.gz)", "content": "BASE64_OF_TARBALL"}'
+
+# Extract via SSH
+curl -X POST http://YOUR_SERVER:48891/api/ssh/exec \
+  -d '{"command": "BASE64(tar -xzf /tmp/folder.tar.gz -C /target/path)"}'
+```
+
+### Example 3: Deploy Node.js Project
+
+```bash
+# 1. Upload code (tar method)
+# 2. Install dependencies
+echo -n "cd /app && npm install" | base64  # Y2QgL2FwcCAmJiBucG0gaW5zdGFsbA==
+
+# 3. Restart PM2
+echo -n "pm2 restart app" | base64  # cG0yIHJlc3RhcnQgYXBw
+
+# 4. Check status
+echo -n "pm2 status" | base64  # cG0yIHN0YXR1cw==
+```
+
+
 ## Version History
 
 ### v1.1.0 (2026-02-08)
