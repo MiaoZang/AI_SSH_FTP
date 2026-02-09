@@ -58,7 +58,57 @@ Response:
 }
 ```
 
-### FTP Operations
+### File Upload API (HTTP Multipart) ✨ NEW
+
+**Upload File:**
+```bash
+# path parameter is base64 encoded destination path
+curl -X POST http://YOUR_SERVER:48891/api/file/upload \
+  -F "file=@local_file.tar.gz" \
+  -F "path=BASE64_ENCODED_DEST_PATH"
+```
+
+**Upload & Auto-Extract:**
+```bash
+curl -X POST http://YOUR_SERVER:48891/api/file/upload \
+  -F "file=@archive.tar.gz" \
+  -F "path=BASE64_ENCODED_DEST_PATH" \
+  -F "extract=true"
+```
+
+Response:
+```json
+{
+  "success": true,
+  "path": "/www/wwwroot/test/archive.tar.gz",
+  "size": 493518
+}
+```
+
+**List Directory:**
+```bash
+curl -X POST http://YOUR_SERVER:48891/api/file/list \
+  -H "Content-Type: application/json" \
+  -d '{"path": "BASE64_ENCODED_PATH"}'
+```
+
+**Download File:**
+```bash
+curl -X POST http://YOUR_SERVER:48891/api/file/download \
+  -H "Content-Type: application/json" \
+  -d '{"path": "BASE64_ENCODED_PATH"}'
+```
+
+**Delete File:**
+```bash
+curl -X POST http://YOUR_SERVER:48891/api/file/delete \
+  -H "Content-Type: application/json" \
+  -d '{"path": "BASE64_ENCODED_PATH"}'
+```
+
+### FTP Operations (Legacy)
+
+> ⚠️ FTP API requires FTP server running on target. Consider using File Upload API instead.
 
 **List Directory:**
 ```bash
@@ -66,17 +116,6 @@ curl -X POST http://YOUR_SERVER:48891/api/ftp/list \
   -d '{"path": "BASE64_ENCODED_PATH"}'
 ```
 
-**Upload File:**
-```bash
-curl -X POST http://YOUR_SERVER:48891/api/ftp/upload \
-  -d '{"path": "BASE64_ENCODED_PATH", "content": "BASE64_ENCODED_CONTENT"}'
-```
-
-**Download File:**
-```bash
-curl -X POST http://YOUR_SERVER:48891/api/ftp/download \
-  -d '{"path": "BASE64_ENCODED_PATH"}'
-```
 
 ### WebSocket Interactive SSH
 

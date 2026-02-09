@@ -2,11 +2,15 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"ssh-ftp-proxy/internal/config"
 	"ssh-ftp-proxy/internal/encoder"
 	"ssh-ftp-proxy/internal/logger"
+	"ssh-ftp-proxy/internal/service/file"
 	"ssh-ftp-proxy/internal/service/ftp"
 	"ssh-ftp-proxy/internal/service/ssh"
 
@@ -14,9 +18,10 @@ import (
 )
 
 type Server struct {
-	engine     *gin.Engine
-	sshService *ssh.Service
-	ftpService *ftp.Service
+	engine      *gin.Engine
+	sshService  *ssh.Service
+	ftpService  *ftp.Service
+	fileService *file.Service
 }
 
 func NewServer() *Server {
@@ -25,9 +30,10 @@ func NewServer() *Server {
 	engine.Use(LoggerMiddleware())
 
 	s := &Server{
-		engine:     engine,
-		sshService: ssh.NewService(config.GlobalConfig.SSHServer),
-		ftpService: ftp.NewService(config.GlobalConfig.FTPServer),
+		engine:      engine,
+		sshService:  ssh.NewService(config.GlobalConfig.SSHServer),
+		ftpService:  ftp.NewService(config.GlobalConfig.FTPServer),
+		fileService: file.NewService(),
 	}
 
 	s.setupRoutes()
@@ -47,6 +53,15 @@ func (s *Server) setupRoutes() {
 		ftpGroup.POST("/list", s.handleFTPList)
 		ftpGroup.POST("/upload", s.handleFTPUpload)
 		ftpGroup.POST("/download", s.handleFTPDownload)
+	}
+
+	// New file API (HTTP multipart upload)
+	fileGroup := s.engine.Group("/api/file")
+	{
+		fileGroup.POST("/upload", s.handleFileUpload)
+		fileGroup.POST("/list", s.handleFileList)
+		fileGroup.POST("/download", s.handleFileDownload)
+		fileGroup.POST("/delete", s.handleFileDelete)
 	}
 }
 
@@ -122,4 +137,192 @@ func (s *Server) newErrorResponse(msg string) SSHExecResponse {
 		Error:    encoder.Encode(msg),
 		ExitCode: 1, // Indicate error
 	}
+}
+
+// ============ File API Handlers ============
+
+// FileUploadResponse represents the response for file upload
+type FileUploadResponse struct {
+	Success bool   `json:"success"`
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+	Error   string `json:"error,omitempty"`
+}
+
+// handleFileUpload handles multipart file upload
+// Supports optional auto-extract for tar.gz/zip files
+func (s *Server) handleFileUpload(c *gin.Context) {
+	// Get destination path (base64 encoded)
+	pathB64 := c.PostForm("path")
+	if pathB64 == "" {
+		c.JSON(http.StatusBadRequest, FileUploadResponse{Error: "path is required"})
+		return
+	}
+
+	destPath, err := encoder.Decode(pathB64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, FileUploadResponse{Error: "invalid base64 path"})
+		return
+	}
+
+	// Get file from form
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, FileUploadResponse{Error: "file is required"})
+		return
+	}
+
+	// Open uploaded file
+	src, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, FileUploadResponse{Error: err.Error()})
+		return
+	}
+	defer src.Close()
+
+	// Determine full destination path
+	fullPath := destPath
+	if info, err := os.Stat(destPath); err == nil && info.IsDir() {
+		// If destPath is a directory, append filename
+		fullPath = filepath.Join(destPath, fileHeader.Filename)
+	}
+
+	// Save file
+	if err := s.fileService.SaveFile(src, fullPath); err != nil {
+		c.JSON(http.StatusInternalServerError, FileUploadResponse{Error: err.Error()})
+		return
+	}
+
+	// Check if auto-extract is requested
+	extract := c.PostForm("extract")
+	if extract == "true" {
+		// Extract to same directory as archive
+		extractDir := filepath.Dir(fullPath)
+		if err := s.fileService.ExtractArchive(fullPath, extractDir); err != nil {
+			c.JSON(http.StatusOK, FileUploadResponse{
+				Success: true,
+				Path:    fullPath,
+				Size:    fileHeader.Size,
+				Error:   "upload success but extract failed: " + err.Error(),
+			})
+			return
+		}
+		// Delete archive after successful extraction
+		os.Remove(fullPath)
+		logger.Log.Info("File uploaded and extracted", "path", extractDir)
+	}
+
+	c.JSON(http.StatusOK, FileUploadResponse{
+		Success: true,
+		Path:    fullPath,
+		Size:    fileHeader.Size,
+	})
+}
+
+// FileListRequest represents the request for file listing
+type FileListRequest struct {
+	Path string `json:"path" binding:"required"` // Base64 encoded
+}
+
+// handleFileList lists directory contents
+func (s *Server) handleFileList(c *gin.Context) {
+	var req FileListRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+		return
+	}
+
+	dirPath, err := encoder.Decode(req.Path)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 path"})
+		return
+	}
+
+	files, err := s.fileService.ListDir(dirPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"files": files})
+}
+
+// FileDownloadRequest represents the request for file download
+type FileDownloadRequest struct {
+	Path string `json:"path" binding:"required"` // Base64 encoded
+}
+
+// handleFileDownload downloads a file
+func (s *Server) handleFileDownload(c *gin.Context) {
+	var req FileDownloadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+		return
+	}
+
+	filePath, err := encoder.Decode(req.Path)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 path"})
+		return
+	}
+
+	// Check if file exists
+	info, err := os.Stat(filePath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		return
+	}
+
+	if info.IsDir() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot download directory"})
+		return
+	}
+
+	// Open and read file
+	file, err := os.Open(filePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"content": encoder.EncodeBytes(content),
+		"name":    filepath.Base(filePath),
+		"size":    info.Size(),
+	})
+}
+
+// FileDeleteRequest represents the request for file deletion
+type FileDeleteRequest struct {
+	Path string `json:"path" binding:"required"` // Base64 encoded
+}
+
+// handleFileDelete deletes a file or directory
+func (s *Server) handleFileDelete(c *gin.Context) {
+	var req FileDeleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+		return
+	}
+
+	filePath, err := encoder.Decode(req.Path)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 path"})
+		return
+	}
+
+	// Remove file or directory
+	if err := os.RemoveAll(filePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
