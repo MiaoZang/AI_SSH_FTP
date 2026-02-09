@@ -31,6 +31,26 @@ curl -fsSL https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/ma
 - 📦 **Auto-download** - Downloads binary from GitHub if missing
 - 🔧 **Interactive config** - Creates config.yaml via wizard
 
+### One-Click Deploy Script ✨ NEW
+
+**Linux/Mac:**
+```bash
+# 部署目录到服务器
+./scripts/deploy.sh ./dist /www/wwwroot/app/ http://SERVER:48891
+```
+
+**Windows PowerShell:**
+```powershell
+# 部署目录到服务器
+.\scripts\deploy.ps1 -LocalDir .\dist -RemotePath /www/wwwroot/app/ -ServerUrl http://SERVER:48891
+```
+
+**功能 / Features:**
+- 📦 自动压缩本地目录 / Auto-compress local directory
+- 🚀 上传到远程服务器 / Upload to remote server  
+- 📂 自动解压到目标路径 / Auto-extract to destination
+- ✅ 验证部署结果 / Verify deployment
+
 ---
 
 ## API Endpoints
