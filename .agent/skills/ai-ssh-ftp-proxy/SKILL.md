@@ -33,16 +33,28 @@ curl -fsSL https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/ma
 
 ### One-Click Deploy Script ✨ NEW
 
-**Linux/Mac:**
+**AI 下载脚本 / AI Download Scripts:**
 ```bash
-# 部署目录到服务器
-./scripts/deploy.sh ./dist /www/wwwroot/app/ http://SERVER:48891
+# Linux/Mac - 下载 deploy.sh
+wget https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/deploy.sh
+chmod +x deploy.sh
+
+# Windows PowerShell - 下载 deploy.ps1
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/deploy.ps1" -OutFile deploy.ps1
 ```
 
-**Windows PowerShell:**
+**使用方法 / Usage:**
+
+Linux/Mac:
+```bash
+./deploy.sh <本地目录> <远程路径> <服务器地址>
+./deploy.sh ./dist /www/wwwroot/app/ http://SERVER:48891
+```
+
+Windows PowerShell:
 ```powershell
-# 部署目录到服务器
-.\scripts\deploy.ps1 -LocalDir .\dist -RemotePath /www/wwwroot/app/ -ServerUrl http://SERVER:48891
+.\deploy.ps1 -LocalDir <本地目录> -RemotePath <远程路径> -ServerUrl <服务器地址>
+.\deploy.ps1 -LocalDir .\dist -RemotePath /www/wwwroot/app/ -ServerUrl http://SERVER:48891
 ```
 
 **功能 / Features:**
@@ -50,6 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/ma
 - 🚀 上传到远程服务器 / Upload to remote server  
 - 📂 自动解压到目标路径 / Auto-extract to destination
 - ✅ 验证部署结果 / Verify deployment
+
 
 ---
 

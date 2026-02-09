@@ -36,7 +36,7 @@ $TempArchive = Join-Path $env:TEMP "deploy_$(Get-Date -Format 'yyyyMMddHHmmss').
 # --- Banner ---
 Write-Host ""
 Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Blue
-Write-Host "║          AI SSH/FTP Proxy - 一键部署 / One-Click Deploy    ║" -ForegroundColor Blue
+Write-Host "║          AI SSH/FTP Proxy - 一键部署 / One-Click Deploy     ║" -ForegroundColor Blue
 Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Blue
 Write-Host ""
 Write-Host "  本地目录 / Local:    $LocalDir"
