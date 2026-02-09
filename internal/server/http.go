@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"ssh-ftp-proxy/internal/config"
 	"ssh-ftp-proxy/internal/encoder"
@@ -165,40 +166,57 @@ func (s *Server) handleFileUpload(c *gin.Context) {
 		return
 	}
 
+	logger.Log.Debug("File upload request", "destPath", destPath)
+
 	// Get file from form
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, FileUploadResponse{Error: "file is required"})
+		logger.Log.Error("Failed to get file from form", "error", err)
+		c.JSON(http.StatusBadRequest, FileUploadResponse{Error: "file is required: " + err.Error()})
 		return
 	}
+
+	logger.Log.Debug("Received file", "filename", fileHeader.Filename, "size", fileHeader.Size)
 
 	// Open uploaded file
 	src, err := fileHeader.Open()
 	if err != nil {
+		logger.Log.Error("Failed to open uploaded file", "error", err)
 		c.JSON(http.StatusInternalServerError, FileUploadResponse{Error: err.Error()})
 		return
 	}
 	defer src.Close()
 
 	// Determine full destination path
+	// If destPath ends with / or is an existing directory, append filename
 	fullPath := destPath
-	if info, err := os.Stat(destPath); err == nil && info.IsDir() {
-		// If destPath is a directory, append filename
+	if strings.HasSuffix(destPath, "/") || strings.HasSuffix(destPath, "\\") {
+		// Path ends with separator, treat as directory
+		fullPath = filepath.Join(destPath, fileHeader.Filename)
+	} else if info, err := os.Stat(destPath); err == nil && info.IsDir() {
+		// Path is an existing directory
 		fullPath = filepath.Join(destPath, fileHeader.Filename)
 	}
 
+	logger.Log.Debug("Saving file", "fullPath", fullPath)
+
 	// Save file
 	if err := s.fileService.SaveFile(src, fullPath); err != nil {
+		logger.Log.Error("Failed to save file", "error", err, "path", fullPath)
 		c.JSON(http.StatusInternalServerError, FileUploadResponse{Error: err.Error()})
 		return
 	}
+
+	logger.Log.Info("File saved", "path", fullPath, "size", fileHeader.Size)
 
 	// Check if auto-extract is requested
 	extract := c.PostForm("extract")
 	if extract == "true" {
 		// Extract to same directory as archive
 		extractDir := filepath.Dir(fullPath)
+		logger.Log.Debug("Extracting archive", "archive", fullPath, "destDir", extractDir)
 		if err := s.fileService.ExtractArchive(fullPath, extractDir); err != nil {
+			logger.Log.Error("Failed to extract archive", "error", err)
 			c.JSON(http.StatusOK, FileUploadResponse{
 				Success: true,
 				Path:    fullPath,
