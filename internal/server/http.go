@@ -63,6 +63,12 @@ func (s *Server) setupRoutes() {
 		fileGroup.POST("/list", s.handleFileList)
 		fileGroup.POST("/download", s.handleFileDownload)
 		fileGroup.POST("/delete", s.handleFileDelete)
+		// New file operations
+		fileGroup.POST("/mkdir", s.handleFileMkdir)
+		fileGroup.POST("/rename", s.handleFileRename)
+		fileGroup.POST("/copy", s.handleFileCopy)
+		fileGroup.POST("/info", s.handleFileInfo)
+		fileGroup.POST("/batch/delete", s.handleFileBatchDelete)
 	}
 }
 
@@ -343,4 +349,155 @@ func (s *Server) handleFileDelete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// FileMkdirRequest represents the request for mkdir
+type FileMkdirRequest struct {
+	Path string `json:"path" binding:"required"` // Base64 encoded
+}
+
+// handleFileMkdir creates a directory
+func (s *Server) handleFileMkdir(c *gin.Context) {
+	var req FileMkdirRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+		return
+	}
+
+	dirPath, err := encoder.Decode(req.Path)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 path"})
+		return
+	}
+
+	if err := s.fileService.Mkdir(dirPath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "path": dirPath})
+}
+
+// FileRenameRequest represents the request for rename/move
+type FileRenameRequest struct {
+	Src string `json:"src" binding:"required"` // Base64 encoded
+	Dst string `json:"dst" binding:"required"` // Base64 encoded
+}
+
+// handleFileRename moves/renames a file or directory
+func (s *Server) handleFileRename(c *gin.Context) {
+	var req FileRenameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "src and dst are required"})
+		return
+	}
+
+	srcPath, err := encoder.Decode(req.Src)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 src"})
+		return
+	}
+
+	dstPath, err := encoder.Decode(req.Dst)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 dst"})
+		return
+	}
+
+	if err := s.fileService.Rename(srcPath, dstPath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "src": srcPath, "dst": dstPath})
+}
+
+// FileCopyRequest represents the request for copy
+type FileCopyRequest struct {
+	Src string `json:"src" binding:"required"` // Base64 encoded
+	Dst string `json:"dst" binding:"required"` // Base64 encoded
+}
+
+// handleFileCopy copies a file or directory
+func (s *Server) handleFileCopy(c *gin.Context) {
+	var req FileCopyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "src and dst are required"})
+		return
+	}
+
+	srcPath, err := encoder.Decode(req.Src)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 src"})
+		return
+	}
+
+	dstPath, err := encoder.Decode(req.Dst)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 dst"})
+		return
+	}
+
+	if err := s.fileService.Copy(srcPath, dstPath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "src": srcPath, "dst": dstPath})
+}
+
+// FileInfoRequest represents the request for file info
+type FileInfoRequest struct {
+	Path string `json:"path" binding:"required"` // Base64 encoded
+}
+
+// handleFileInfo returns detailed file information
+func (s *Server) handleFileInfo(c *gin.Context) {
+	var req FileInfoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+		return
+	}
+
+	filePath, err := encoder.Decode(req.Path)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 path"})
+		return
+	}
+
+	info, err := s.fileService.GetInfo(filePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, info)
+}
+
+// FileBatchDeleteRequest represents the request for batch delete
+type FileBatchDeleteRequest struct {
+	Paths []string `json:"paths" binding:"required"` // Array of Base64 encoded paths
+}
+
+// handleFileBatchDelete deletes multiple files/directories
+func (s *Server) handleFileBatchDelete(c *gin.Context) {
+	var req FileBatchDeleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "paths array is required"})
+		return
+	}
+
+	// Decode all paths
+	decodedPaths := make([]string, 0, len(req.Paths))
+	for _, p := range req.Paths {
+		decoded, err := encoder.Decode(p)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid base64 path: %s", p)})
+			return
+		}
+		decodedPaths = append(decodedPaths, decoded)
+	}
+
+	result := s.fileService.BatchDelete(decodedPaths)
+	c.JSON(http.StatusOK, result)
 }
