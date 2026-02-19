@@ -1,7 +1,7 @@
 ---
 name: ai-ssh-ftp-proxy
 description: "AI Agent Skill for executing SSH commands and file operations on remote servers via a proxy service. Supports HTTP API and WebSocket for interactive sessions."
-version: "1.4.0"
+version: "1.5.0"
 ---
 
 # AI SSH/FTP Proxy Skill
@@ -308,10 +308,17 @@ ssh_server:
 | `scripts/manage.sh` | Service management | Interactive menu |
 | `scripts/deploy.sh` | Deploy local project to server | CLI |
 | `scripts/deploy.ps1` | Deploy local project (Windows) | CLI |
+| `scripts/ssh_exec.ps1` | PowerShell SSH helper | CLI |
 
 ---
 
 ## Version History
+
+### v1.5.0 (2026-02-19)
+- ✨ **GET SSH API** - `GET /api/ssh/exec?cmd=` 避开 PowerShell JSON 转义
+- 🔧 **兼容性中间件** - 修复 Invoke-RestMethod 挂起问题
+- ✨ **ssh_exec.ps1** - PowerShell SSH 辅助脚本
+- 📖 Windows/PowerShell 完整使用指南
 
 ### v1.4.0 (2026-02-19)
 - ✨ **AI Install Script** - Non-interactive `install.sh` with CLI parameters
