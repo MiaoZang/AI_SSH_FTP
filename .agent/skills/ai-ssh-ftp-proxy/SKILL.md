@@ -86,10 +86,26 @@ curl http://SERVER:48891/api/health
 
 ### SSH Command Execution
 
+**Method 1: GET (recommended for PowerShell / simple calls)**
+
+```bash
+# cmd = base64 encoded command
+curl "http://SERVER:48891/api/ssh/exec?cmd=BASE64_COMMAND"
+```
+
+**Method 2: POST (JSON body)**
+
 ```bash
 curl -X POST http://SERVER:48891/api/ssh/exec \
   -H "Content-Type: application/json" \
   -d '{"command": "BASE64_ENCODED_COMMAND"}'
+```
+
+**Method 3: PowerShell Helper Script (recommended for Windows)**
+
+```powershell
+.\ssh_exec.ps1 -Command "ls -la /" -Server "http://SERVER:48891"
+.\ssh_exec.ps1 -Command "pm2 restart all" -Server "http://SERVER:48891"
 ```
 
 Response:
@@ -98,6 +114,39 @@ Response:
 ```
 
 ---
+
+### Windows / PowerShell Usage Guide
+
+> [!TIP]
+> PowerShell has JSON escaping issues with `curl.exe`. Use one of these methods instead:
+
+**Option A: GET API (simplest)**
+```powershell
+$cmd = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("ls -la /"))
+$resp = Invoke-RestMethod -Uri "http://SERVER:48891/api/ssh/exec?cmd=$cmd" -Method GET
+$output = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.stdout))
+Write-Host $output
+```
+
+**Option B: ssh_exec.ps1 helper script**
+```powershell
+# Download
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/ssh_exec.ps1" -OutFile ssh_exec.ps1
+
+# Use
+.\ssh_exec.ps1 -Command "ls -la /" -Server "http://SERVER:48891"
+```
+
+**Option C: POST with temp file (for complex commands)**
+```powershell
+$cmd = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("ls -la /"))
+@{command=$cmd} | ConvertTo-Json | Set-Content cmd.json -Encoding UTF8
+curl.exe -s -X POST http://SERVER:48891/api/ssh/exec -H "Content-Type: application/json" -d "@cmd.json"
+Remove-Item cmd.json
+```
+
+---
+
 
 ### File Upload API (HTTP Multipart)
 

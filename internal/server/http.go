@@ -28,6 +28,7 @@ type Server struct {
 func NewServer() *Server {
 	engine := gin.New()
 	engine.Use(gin.Recovery())
+	engine.Use(CompatibilityMiddleware())
 	engine.Use(LoggerMiddleware())
 
 	s := &Server{
@@ -47,6 +48,7 @@ func (s *Server) setupRoutes() {
 	sshGroup := s.engine.Group("/api/ssh")
 	{
 		sshGroup.POST("/exec", s.handleSSHExec)
+		sshGroup.GET("/exec", s.handleSSHExecGet)
 	}
 
 	ftpGroup := s.engine.Group("/api/ftp")
@@ -91,8 +93,17 @@ func LoggerMiddleware() gin.HandlerFunc {
 	}
 }
 
+// CompatibilityMiddleware fixes chunked transfer and connection issues with PowerShell
+func CompatibilityMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Force Connection: close to prevent PowerShell hang on Keep-Alive
+		c.Header("Connection", "close")
+		c.Next()
+	}
+}
+
 func (s *Server) handleHealth(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "1.4.0"})
 }
 
 type SSHExecRequest struct {
@@ -126,6 +137,38 @@ func (s *Server) handleSSHExec(c *gin.Context) {
 	stdout, stderr, exitCode, execErr := s.sshService.Exec(cmd)
 
 	// 3. Encode Response
+	resp := SSHExecResponse{
+		Stdout:   encoder.Encode(stdout),
+		Stderr:   encoder.Encode(stderr),
+		ExitCode: exitCode,
+	}
+
+	if execErr != nil {
+		resp.Error = encoder.Encode(execErr.Error())
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// handleSSHExecGet handles GET /api/ssh/exec?cmd=BASE64_COMMAND
+// This avoids JSON body escaping issues in PowerShell
+func (s *Server) handleSSHExecGet(c *gin.Context) {
+	cmdB64 := c.Query("cmd")
+	if cmdB64 == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cmd query parameter is required"})
+		return
+	}
+
+	cmd, err := encoder.Decode(cmdB64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid base64 cmd: %v", err)})
+		return
+	}
+
+	logger.Log.Debug("Executing SSH command (GET)", "command", cmd)
+
+	stdout, stderr, exitCode, execErr := s.sshService.Exec(cmd)
+
 	resp := SSHExecResponse{
 		Stdout:   encoder.Encode(stdout),
 		Stderr:   encoder.Encode(stderr),
