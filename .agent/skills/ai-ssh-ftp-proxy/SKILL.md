@@ -1,7 +1,7 @@
 ---
 name: ai-ssh-ftp-proxy
 description: "AI Agent Skill for executing SSH commands and file operations on remote servers via a proxy service. Supports HTTP API and WebSocket for interactive sessions."
-version: "1.5.0"
+version: "1.6.0"
 ---
 
 # AI SSH/FTP Proxy Skill
@@ -26,6 +26,23 @@ All inputs and outputs are Base64 encoded for safe transmission.
 > If the target server does NOT have this proxy service installed yet, follow the steps below.
 > If already installed, skip to [API Endpoints](#api-endpoints).
 
+### Pre-Check (部署前检查)
+
+Before deploying, check if the service is already running on the target server:
+
+```powershell
+# From Windows PowerShell - check if service is reachable
+curl.exe -s http://{SERVER_IP}:48891/api/health
+# If returns {"status":"ok",...} → service already running, skip deployment
+# If connection refused → proceed with deployment
+```
+
+> [!CAUTION]
+> If port 48891 is already in use by an old instance, you MUST stop it first:
+> ```bash
+> pkill ssh-ftp-proxy   # or: systemctl stop ssh-ftp-proxy
+> ```
+
 ### Step 1: Connect to Server via SSH
 
 Use the **SSH 直连方式** skill (`.agent/skills/JN___Open SSH连接`) to connect:
@@ -34,45 +51,74 @@ Use the **SSH 直连方式** skill (`.agent/skills/JN___Open SSH连接`) to conn
 C:\Windows\System32\OpenSSH\ssh.exe -o StrictHostKeyChecking=no -p {SSH_PORT} {USER}@{SERVER_IP}
 ```
 
-### Step 2: Run the Install Script
+### Step 2: Install (Choose ONE method)
 
-After SSH login, execute:
+#### Method A: install.sh (recommended)
 
 ```bash
-# Download and run installer (one-liner)
 curl -fsSL https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/install.sh -o /tmp/install.sh && \
 chmod +x /tmp/install.sh && \
 /tmp/install.sh --ssh-port {SSH_PORT} --ssh-user {USER} --ssh-pass {PASSWORD} --auto-start --systemd
 ```
 
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--ssh-pass` | (required) | SSH password |
+| `--ssh-host` | `127.0.0.1` | SSH host (proxy connects to localhost) |
+| `--ssh-port` | `22` | SSH port |
+| `--ssh-user` | `root` | SSH username |
+| `--http-port` | `48891` | HTTP API port |
+| `--auto-start` | false | Start after install |
+| `--systemd` | false | Create systemd service |
+| `--force` | false | Force reinstall |
+
+#### Method B: Manual Deploy (fallback if install.sh fails)
+
 > [!TIP]
-> - `--ssh-host` defaults to `127.0.0.1` (proxy connects to localhost SSH)
-> - `--ssh-port` should match the server's actual SSH port
-> - `--ssh-user` and `--ssh-pass` = the same credentials you used to SSH in
-> - `--auto-start` starts the service immediately after install
-> - `--systemd` registers as a systemd service for auto-restart
+> Use this when `install.sh` download fails or you need full control.
+
+```bash
+# 1. Create directory structure
+mkdir -p /opt/ssh-ftp-proxy/{config,logs,scripts}
+cd /opt/ssh-ftp-proxy
+
+# 2. Download binary and management script
+wget -q https://github.com/MiaoZang/AI_SSH_FTP/releases/latest/download/ssh-ftp-proxy
+chmod +x ssh-ftp-proxy
+wget -q https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/manage.sh -O scripts/manage.sh
+chmod +x scripts/manage.sh
+
+# 3. Create config (replace values below)
+cat > config/config.yaml << 'EOF'
+server:
+  http_port: 48891
+  ws_port: 48892
+  bind_ip: "0.0.0.0"
+ssh_server:
+  host: "127.0.0.1"
+  port: {SSH_PORT}
+  user: "{USER}"
+  password: "{PASSWORD}"
+ftp_server:
+  host: "127.0.0.1"
+  port: 21
+  user: "{USER}"
+  password: "{PASSWORD}"
+log:
+  level: "info"
+  file: "logs/server.log"
+EOF
+
+# 4. Start service (non-interactive CLI mode)
+bash scripts/manage.sh start
+```
 
 ### Step 3: Verify
 
 ```bash
 curl http://127.0.0.1:48891/api/health
-# Expected: {"status":"ok"}
+# Expected: {"status":"ok","version":"1.6.0"}
 ```
-
-### Full Install Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--ssh-pass` | (required) | SSH password |
-| `--ssh-host` | `127.0.0.1` | SSH host |
-| `--ssh-port` | `22` | SSH port |
-| `--ssh-user` | `root` | SSH username |
-| `--http-port` | `48891` | HTTP API port |
-| `--ws-port` | `48892` | WebSocket port |
-| `--install-dir` | `/opt/ssh-ftp-proxy` | Install directory |
-| `--auto-start` | false | Start after install |
-| `--systemd` | false | Create systemd service |
-| `--force` | false | Force reinstall |
 
 ---
 
@@ -305,14 +351,67 @@ ssh_server:
 | Script | Purpose | Mode |
 |--------|---------|------|
 | `scripts/install.sh` | Install & configure service | CLI (AI-friendly) |
-| `scripts/manage.sh` | Service management | Interactive menu |
+| `scripts/manage.sh` | Service management | Interactive menu + CLI |
 | `scripts/deploy.sh` | Deploy local project to server | CLI |
 | `scripts/deploy.ps1` | Deploy local project (Windows) | CLI |
 | `scripts/ssh_exec.ps1` | PowerShell SSH helper | CLI |
 
+### manage.sh CLI Commands (non-interactive)
+
+> [!IMPORTANT]
+> AI should use CLI mode, NOT the interactive menu. Never pipe with `curl | bash`.
+
+| Command | Function |
+|---------|----------|
+| `bash manage.sh start` | Start service |
+| `bash manage.sh stop` | Stop service |
+| `bash manage.sh restart` | Restart service |
+| `bash manage.sh status` | Check running status |
+| `bash manage.sh logs` | View logs (tail -f) |
+| `bash manage.sh update` | Update binary from GitHub |
+| `bash manage.sh config` | Re-run config wizard (interactive) |
+
+---
+
+## Troubleshooting
+
+### Port already in use
+```bash
+# Check what is using port 48891
+ss -tlnp | grep 48891
+# Kill the old process
+pkill ssh-ftp-proxy
+# Or use systemd
+systemctl stop ssh-ftp-proxy
+```
+
+### Service fails to start
+```bash
+# Check logs
+tail -50 /opt/ssh-ftp-proxy/logs/server.log
+# Verify config
+cat /opt/ssh-ftp-proxy/config/config.yaml
+# Test SSH connectivity from server
+ssh -p {SSH_PORT} {USER}@127.0.0.1 echo ok
+```
+
+### Cannot reach API from Windows
+```powershell
+# Test basic connectivity
+curl.exe -s http://{SERVER_IP}:48891/api/health
+# If timeout, check firewall
+# On server: ufw allow 48891/tcp
+```
+
 ---
 
 ## Version History
+
+### v1.6.0 (2026-03-09)
+- 📖 **AI 部署增强** - 添加部署前检查、手动 fallback 部署方式
+- 📖 **manage.sh CLI 参考** - 记录免交互 CLI 命令
+- 📖 **故障排除指南** - 端口冲突、启动失败、连接超时
+- ⚠️ **AI 部署警告** - 禁止使用 `curl | bash`，必须用 CLI 模式
 
 ### v1.5.0 (2026-02-19)
 - ✨ **GET SSH API** - `GET /api/ssh/exec?cmd=` 避开 PowerShell JSON 转义
