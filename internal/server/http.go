@@ -103,7 +103,7 @@ func CompatibilityMiddleware() gin.HandlerFunc {
 }
 
 func (s *Server) handleHealth(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "1.4.0"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "1.7.0"})
 }
 
 type SSHExecRequest struct {

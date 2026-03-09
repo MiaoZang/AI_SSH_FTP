@@ -1,7 +1,7 @@
 ---
 name: ai-ssh-ftp-proxy
 description: "AI Agent Skill for executing SSH commands and file operations on remote servers via a proxy service. Supports HTTP API and WebSocket for interactive sessions."
-version: "1.6.0"
+version: "1.7.0"
 ---
 
 # AI SSH/FTP Proxy Skill
@@ -113,11 +113,47 @@ EOF
 bash scripts/manage.sh start
 ```
 
+#### Method C: Environment Variables (zero config file)
+
+> [!TIP]
+> The simplest AI deployment: just set env vars and run the binary. No config file needed at all.
+
+```bash
+# Download binary only
+mkdir -p /opt/ssh-ftp-proxy/logs && cd /opt/ssh-ftp-proxy
+wget -q https://github.com/MiaoZang/AI_SSH_FTP/releases/latest/download/ssh-ftp-proxy
+chmod +x ssh-ftp-proxy
+
+# Start with env vars (no config.yaml needed!)
+SFTP_SSH_PORT={SSH_PORT} SFTP_SSH_USER={USER} SFTP_SSH_PASS={PASSWORD} \
+  nohup ./ssh-ftp-proxy > logs/server.log 2>&1 &
+```
+
+**Environment Variables Reference:**
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `SFTP_SSH_HOST` | `127.0.0.1` | SSH host |
+| `SFTP_SSH_PORT` | `22` | SSH port |
+| `SFTP_SSH_USER` | `root` | SSH username |
+| `SFTP_SSH_PASS` | (required) | SSH password |
+| `SFTP_SSH_KEY` | `` | SSH key file |
+| `SFTP_HTTP_PORT` | `48891` | HTTP API port |
+| `SFTP_WS_PORT` | `48892` | WebSocket port |
+| `SFTP_BIND_IP` | `0.0.0.0` | Bind IP |
+| `SFTP_FTP_HOST` | same as SSH | FTP host |
+| `SFTP_FTP_PORT` | `21` | FTP port |
+| `SFTP_FTP_USER` | same as SSH | FTP username |
+| `SFTP_FTP_PASS` | same as SSH | FTP password |
+| `SFTP_LOG_LEVEL` | `info` | Log level |
+
+> Config priority: **env vars > config.yaml > defaults**
+
 ### Step 3: Verify
 
 ```bash
 curl http://127.0.0.1:48891/api/health
-# Expected: {"status":"ok","version":"1.6.0"}
+# Expected: {"status":"ok","version":"1.7.0"}
 ```
 
 ---
@@ -406,6 +442,11 @@ curl.exe -s http://{SERVER_IP}:48891/api/health
 ---
 
 ## Version History
+
+### v1.7.0 (2026-03-09)
+- ✨ **环境变量配置** - `SFTP_*` 环境变量支持，无需配置文件即可启动
+- ✨ **配置文件可选** - config.yaml 不存在时自动使用默认值 + 环境变量
+- 📖 **Method C 部署** - SKILL.md 新增环境变量零文件部署方式
 
 ### v1.6.0 (2026-03-09)
 - 📖 **AI 部署增强** - 添加部署前检查、手动 fallback 部署方式
