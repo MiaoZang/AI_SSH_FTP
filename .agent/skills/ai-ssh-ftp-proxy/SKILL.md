@@ -202,29 +202,120 @@ Response:
 > [!TIP]
 > PowerShell has JSON escaping issues with `curl.exe`. Use one of these methods instead:
 
-**Option A: GET API (simplest)**
+**Recommended: Invoke-SSHCommand function (copy-paste and use)**
+
 ```powershell
-$cmd = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("ls -la /"))
-$resp = Invoke-RestMethod -Uri "http://SERVER:48891/api/ssh/exec?cmd=$cmd" -Method GET
-$output = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.stdout))
-Write-Host $output
+# Define this function once per session
+function Invoke-SSHCommand {
+    param(
+        [Parameter(Mandatory)][string]$Command,
+        [string]$Server = "http://SERVER:48891",
+        [int]$Timeout = 300
+    )
+    $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Command))
+    $resp = Invoke-RestMethod -Uri "$Server/api/ssh/exec?cmd=$b64" -Method GET -TimeoutSec $Timeout
+    $out = if ($resp.stdout) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.stdout)) } else { "" }
+    $err = if ($resp.stderr) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.stderr)) } else { "" }
+    return @{ stdout = $out; stderr = $err; exit_code = $resp.exit_code }
+}
+
+# Usage:
+$r = Invoke-SSHCommand "ls -la /"
+Write-Host $r.stdout
+
+$r = Invoke-SSHCommand "cat /etc/os-release"
+Write-Host $r.stdout
 ```
 
-**Option B: ssh_exec.ps1 helper script**
-```powershell
-# Download
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/MiaoZang/AI_SSH_FTP/main/scripts/ssh_exec.ps1" -OutFile ssh_exec.ps1
+> [!CAUTION]
+> Each call creates isolated variables. Do NOT reuse `$resp`/`$stdout` across calls — always assign to `$r = Invoke-SSHCommand ...`
 
-# Use
-.\ssh_exec.ps1 -Command "ls -la /" -Server "http://SERVER:48891"
+**Other options:**
+- **GET API**: `curl.exe "http://SERVER:48891/api/ssh/exec?cmd=BASE64"`
+- **ssh_exec.ps1**: `.\ssh_exec.ps1 -Command "ls" -Server "http://SERVER:48891"`
+- **Temp file**: Write JSON to file, then `curl.exe -d @file.json`
+
+---
+
+### Async SSH Execution (for long-running commands)
+
+> [!TIP]
+> Use async mode for commands that take >30 seconds (builds, installs, etc.)
+
+**Step 1: Start async task**
+```bash
+curl -X POST http://SERVER:48891/api/ssh/exec/async \
+  -H "Content-Type: application/json" \
+  -d '{"command": "BASE64_COMMAND"}'
+# Returns: {"task_id": "task_xxx", "status": "running", "poll": "/api/ssh/task/task_xxx"}
 ```
 
-**Option C: POST with temp file (for complex commands)**
+**Step 2: Poll for result**
+```bash
+curl http://SERVER:48891/api/ssh/task/task_xxx
+# Returns: {"id":"task_xxx", "status":"done", "result": {"stdout":"...", "exit_code":0}}
+```
+
+**PowerShell async example:**
 ```powershell
-$cmd = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("ls -la /"))
-@{command=$cmd} | ConvertTo-Json | Set-Content cmd.json -Encoding UTF8
-curl.exe -s -X POST http://SERVER:48891/api/ssh/exec -H "Content-Type: application/json" -d "@cmd.json"
-Remove-Item cmd.json
+# Start long build
+$b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("cd /app && mvn clean package"))
+$task = Invoke-RestMethod -Uri "http://SERVER:48891/api/ssh/exec/async" -Method POST `
+  -ContentType "application/json" -Body (@{command=$b64} | ConvertTo-Json)
+Write-Host "Task started: $($task.task_id)"
+
+# Poll until done
+do {
+    Start-Sleep -Seconds 5
+    $status = Invoke-RestMethod -Uri "http://SERVER:48891/api/ssh/task/$($task.task_id)"
+    Write-Host "Status: $($status.status)"
+} while ($status.status -eq "running")
+
+# Get result
+$out = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($status.result.stdout))
+Write-Host $out
+```
+
+---
+
+### Script / Batch Command Execution
+
+**Mode 1: Execute a bash script block**
+```bash
+# Encode a multi-line script
+SCRIPT=$(cat <<'BASH' | base64
+#!/bin/bash
+cd /app
+echo "Building..."
+mvn clean package -q
+echo "Deploying..."
+cp target/*.jar /opt/app/
+systemctl restart myapp
+echo "Done!"
+BASH
+)
+curl -X POST http://SERVER:48891/api/ssh/script \
+  -H "Content-Type: application/json" \
+  -d "{\"script\": \"$SCRIPT\"}"
+```
+
+**Mode 2: Execute multiple commands sequentially**
+```bash
+curl -X POST http://SERVER:48891/api/ssh/script \
+  -H "Content-Type: application/json" \
+  -d '{"commands": ["BASE64_CMD1", "BASE64_CMD2", "BASE64_CMD3"]}'
+# Returns: {"results": [...], "total": 3, "failed": 0}
+```
+
+**PowerShell batch example:**
+```powershell
+$cmds = @("mkdir -p /app", "cd /app && ls", "whoami") | ForEach-Object {
+    [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($_))
+}
+$body = @{commands = $cmds} | ConvertTo-Json
+$resp = Invoke-RestMethod -Uri "http://SERVER:48891/api/ssh/script" -Method POST `
+  -ContentType "application/json" -Body $body
+Write-Host "Total: $($resp.total), Failed: $($resp.failed)"
 ```
 
 ---

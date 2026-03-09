@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"ssh-ftp-proxy/internal/config"
 	"ssh-ftp-proxy/internal/encoder"
@@ -23,6 +25,9 @@ type Server struct {
 	sshService  *ssh.Service
 	ftpService  *ftp.Service
 	fileService *file.Service
+	tasks       sync.Map // async task store: taskID -> *AsyncTask
+	taskCounter int64
+	taskMu      sync.Mutex
 }
 
 func NewServer() *Server {
@@ -49,6 +54,9 @@ func (s *Server) setupRoutes() {
 	{
 		sshGroup.POST("/exec", s.handleSSHExec)
 		sshGroup.GET("/exec", s.handleSSHExecGet)
+		sshGroup.POST("/exec/async", s.handleSSHExecAsync)
+		sshGroup.GET("/task/:id", s.handleSSHTaskStatus)
+		sshGroup.POST("/script", s.handleSSHScript)
 	}
 
 	ftpGroup := s.engine.Group("/api/ftp")
@@ -185,8 +193,189 @@ func (s *Server) handleSSHExecGet(c *gin.Context) {
 func (s *Server) newErrorResponse(msg string) SSHExecResponse {
 	return SSHExecResponse{
 		Error:    encoder.Encode(msg),
-		ExitCode: 1, // Indicate error
+		ExitCode: 1,
 	}
+}
+
+// ============ Async SSH Execution ============
+
+type AsyncTask struct {
+	ID        string           `json:"id"`
+	Status    string           `json:"status"` // running, done, error
+	Command   string           `json:"command"`
+	Result    *SSHExecResponse `json:"result,omitempty"`
+	CreatedAt time.Time        `json:"created_at"`
+	DoneAt    *time.Time       `json:"done_at,omitempty"`
+}
+
+func (s *Server) nextTaskID() string {
+	s.taskMu.Lock()
+	defer s.taskMu.Unlock()
+	s.taskCounter++
+	return fmt.Sprintf("task_%d_%d", time.Now().Unix(), s.taskCounter)
+}
+
+// handleSSHExecAsync starts a command in background and returns a task ID
+func (s *Server) handleSSHExecAsync(c *gin.Context) {
+	var req SSHExecRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request: %v", err)})
+		return
+	}
+
+	cmd, err := encoder.Decode(req.Command)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid base64 command: %v", err)})
+		return
+	}
+
+	taskID := s.nextTaskID()
+	task := &AsyncTask{
+		ID:        taskID,
+		Status:    "running",
+		Command:   cmd,
+		CreatedAt: time.Now(),
+	}
+	s.tasks.Store(taskID, task)
+
+	logger.Log.Debug("Async SSH command started", "task_id", taskID, "command", cmd)
+
+	go func() {
+		stdout, stderr, exitCode, execErr := s.sshService.Exec(cmd)
+		now := time.Now()
+		resp := &SSHExecResponse{
+			Stdout:   encoder.Encode(stdout),
+			Stderr:   encoder.Encode(stderr),
+			ExitCode: exitCode,
+		}
+		if execErr != nil {
+			resp.Error = encoder.Encode(execErr.Error())
+		}
+		task.Result = resp
+		task.DoneAt = &now
+		if execErr != nil {
+			task.Status = "error"
+		} else {
+			task.Status = "done"
+		}
+		logger.Log.Debug("Async SSH command done", "task_id", taskID, "exit_code", exitCode)
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"task_id": taskID,
+		"status":  "running",
+		"poll":    fmt.Sprintf("/api/ssh/task/%s", taskID),
+	})
+}
+
+// handleSSHTaskStatus returns the status/result of an async task
+func (s *Server) handleSSHTaskStatus(c *gin.Context) {
+	taskID := c.Param("id")
+	val, ok := s.tasks.Load(taskID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		return
+	}
+	task := val.(*AsyncTask)
+	c.JSON(http.StatusOK, task)
+}
+
+// ============ Script Execution ============
+
+type SSHScriptRequest struct {
+	Script   string   `json:"script"`   // Base64 encoded bash script
+	Commands []string `json:"commands"` // Alternative: array of Base64 encoded commands
+}
+
+type SSHScriptResponse struct {
+	Results []SSHExecResponse `json:"results"`
+	Total   int               `json:"total"`
+	Failed  int               `json:"failed"`
+}
+
+// handleSSHScript executes a bash script or a list of commands
+func (s *Server) handleSSHScript(c *gin.Context) {
+	var req SSHScriptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request: %v", err)})
+		return
+	}
+
+	// Mode 1: Execute a single script block
+	if req.Script != "" {
+		script, err := encoder.Decode(req.Script)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid base64 script: %v", err)})
+			return
+		}
+		// Wrap in bash -c for multi-line script
+		wrappedCmd := fmt.Sprintf("bash -c %s", shellQuote(script))
+		logger.Log.Debug("Executing SSH script", "length", len(script))
+
+		stdout, stderr, exitCode, execErr := s.sshService.Exec(wrappedCmd)
+		resp := SSHExecResponse{
+			Stdout:   encoder.Encode(stdout),
+			Stderr:   encoder.Encode(stderr),
+			ExitCode: exitCode,
+		}
+		if execErr != nil {
+			resp.Error = encoder.Encode(execErr.Error())
+		}
+		c.JSON(http.StatusOK, SSHScriptResponse{
+			Results: []SSHExecResponse{resp},
+			Total:   1,
+			Failed:  boolToInt(exitCode != 0),
+		})
+		return
+	}
+
+	// Mode 2: Execute array of commands sequentially
+	if len(req.Commands) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Either 'script' or 'commands' is required"})
+		return
+	}
+
+	var results []SSHExecResponse
+	failed := 0
+	for _, cmdB64 := range req.Commands {
+		cmd, err := encoder.Decode(cmdB64)
+		if err != nil {
+			results = append(results, SSHExecResponse{
+				Error:    encoder.Encode(fmt.Sprintf("Invalid base64: %v", err)),
+				ExitCode: 1,
+			})
+			failed++
+			continue
+		}
+		stdout, stderr, exitCode, execErr := s.sshService.Exec(cmd)
+		resp := SSHExecResponse{
+			Stdout:   encoder.Encode(stdout),
+			Stderr:   encoder.Encode(stderr),
+			ExitCode: exitCode,
+		}
+		if execErr != nil {
+			resp.Error = encoder.Encode(execErr.Error())
+			failed++
+		}
+		results = append(results, resp)
+	}
+
+	c.JSON(http.StatusOK, SSHScriptResponse{
+		Results: results,
+		Total:   len(req.Commands),
+		Failed:  failed,
+	})
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // ============ File API Handlers ============
