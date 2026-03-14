@@ -31,7 +31,32 @@ vendor/
 
 # Test files
 test_*.go
+test/
 
 # Deployment artifacts (will be in releases)
 deployment/
 *.zip
+
+# ============ 敏感 & 本地文件（不上传到仓库） ============
+
+# 项目规则（包含服务器凭据等隐私信息）
+.agent/rules/
+
+# 本地技能文档（不需要上传）
+.agent/skills/JN___*/
+.agent/skills/ssh/ssh*.md
+
+# 需求/改进/日志等本地文档（含服务器信息）
+需求.md
+技能改进*.md
+AI部署日志.md
+
+# 总结文件（仅本地使用）
+总结.md
+总结/
+
+# 任务清单（仅本地使用）
+任务清单.md
+
+# 临时文件
+tracked_files.txt
